@@ -103,8 +103,8 @@ class DeepQNetwork():
         tf.placeholder(tf.float32, [None, self.n_actions], name='q_target')
         
         # layer configuration
-        n_l1 = 64
-        n_l2 = 64
+        n_l1 = 128
+        n_l2 = 128
         
         with tf.variable_scope('eval_net'):
             # the name will be used when updating target_net params
@@ -218,6 +218,7 @@ class DeepQNetwork():
     def choose_action(self, S):
         # add a deminsion for tensorflow parse
         # o.w. Cannot feed value of shape (3,) for Tensor 'S:0', which has shape '(?, 3)'
+   
         S = np.array(S)
         S = S[np.newaxis, :] # if error, try add np.array(S)
         
@@ -261,36 +262,7 @@ class DeepQNetwork():
         self.memory_counter += 1
   
     
-    def check_action(self, max_step, S, check_pt_path, AGV_1, AGV_2, AGV_3, AGV_4, AGV_5, SUP_IPSR, SUP_ZWSR, E_c, E_u, B):
-        
-        tf.reset_default_graph()
-        S_norm = norm_state(S)
-        isDone_test = 0
-        action_list = []
-        pattern_list = []
-        step_num = 0
-        Episode_reward = 0
-        state_list_his = []
-        state_list_his.append(S)
-        
-        meta_path = check_pt_path + '.meta'
-        saver_test = tf.train.import_meta_graph(meta_path)
-        saver_test.restore(self.sess, check_pt_path)
-        while(step_num <= max_step and isDone_test == 0):
-            step_num += 1
-            S_norm = np.array(S_norm)
-            S_norm = S_norm[np.newaxis, :] # if error, try add np.array(S)
-            pattern_value = self.sess.run(self.q_eval, feed_dict = {self.S: S_norm})
-            pattern_index = np.argmax(pattern_value)
-            [S_, all_S_, R, isDone_test, IfAppear32, stop_ind, selected_action] = StepFun(S, pattern_index, AGV_1, AGV_2, AGV_3, AGV_4, AGV_5, SUP_IPSR, SUP_ZWSR, E_c, E_u, B)
-            S = S_
-            Episode_reward = Episode_reward + R
-            S_norm = norm_state(S)
-            # print('action is:', selected_action, '  ')
-            action_list.append(selected_action)
-            pattern_list.append(pattern_index)
-            state_list_his.append(S)
-        return action_list, pattern_list, state_list_his, Episode_reward
+
     
     # RL.learn(S, A, R, S_)
     def learn(self):
@@ -386,11 +358,12 @@ class DeepQNetwork():
         ENB = []
         STEP = []
         OBS =[]
+        Complete = []
         # load the trained network
         meta_path = check_pt_path + '.meta'
         saver_test = tf.train.import_meta_graph(meta_path)
         saver_test.restore(self.sess, check_pt_path)
-        for i_epi in range(100): # 100 rounds of simulation
+        for i_epi in range(Num_epi_test): # 100 rounds of simulation
             obs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             step = 0
             Bad = 0
@@ -403,10 +376,17 @@ class DeepQNetwork():
                 action_index = np.argmax(action_value)  # The optimal action_index
                 Enb = Permit(obs, plant_params)
                 pattern = Enb                   
+                
+                
                 if obs[-1] > max_diff_num: # if out-in number of products exceed max_diff_num, then disable sending an product
                     pattern = np.setdiff1d(pattern, 10)  # Restrict number of wafers input
-                if not(action_index == 16 or len(pattern) == 1):
-                    pattern = np.setdiff1d(pattern, plant_params.E_c[action_index])            
+                
+                if not (len(pattern) == 1 or action_index == 16): # 16 means disable nothing
+                    pattern = np.setdiff1d(pattern, plant_params.E_c[action_index]) # disable a controllable event
+                
+                
+                # if not(action_index == 16 or len(pattern) == 1):
+                #     pattern = np.setdiff1d(pattern, plant_params.E_c[action_index])            
                 if len(pattern) != 0:                              
                     for event in pattern:
                         obs_ = Next(obs, event, plant_params)
@@ -435,6 +415,7 @@ class DeepQNetwork():
             ENB.append(pattern)  # the enabled event set of deadlock states or the final state of the checked model
             STEP.append(step)   # the maximal steps of the checked model
             OBS.append(obs)    # the terminate states of the checked model
-        return OBS, STEP, BAD, ENB
+            Complete.append(tool_finish)
+        return OBS, STEP, BAD, ENB, Complete
 
     
